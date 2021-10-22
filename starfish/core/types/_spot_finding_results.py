@@ -1,12 +1,12 @@
+import json
+import os
 from dataclasses import dataclass
-from typing import Any, Hashable, Mapping, MutableMapping, Optional, Sequence, Tuple, Dict
+from typing import Any, Dict, Hashable, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import xarray as xr
 
 from starfish.core.types import Axes, Coordinates, SpotAttributes
 from starfish.core.util.logging import Log
-
-import json
 
 AXES_ORDER = (Axes.ROUND, Axes.CH)
 
@@ -121,34 +121,37 @@ class SpotFindingResults:
         """
         json_data: Dict[str, Any] = {}
 
+        os.chdir(os.path.dirname(output_dir_name))
+        base_name = os.path.basename(output_dir_name)
+
         coords = {}
         for key in self.physical_coord_ranges.keys():
-            path = "{}coords_{}.nc".format(output_dir_name, key)
+            path = "{}coords_{}.nc".format(base_name, key)
             coords[key] = path
             self.physical_coord_ranges[key].to_netcdf(path)
         json_data["physical_coord_ranges"] = coords
 
         path = "{}log.arr"
         json_data["log"] = {}
-        json_data["log"]["path"] = path.format(output_dir_name)
-        with open(path.format(output_dir_name), "w") as f:
+        json_data["log"]["path"] = path.format(base_name)
+        with open(path.format(base_name), "w") as f:
             f.write(self.log.encode())
 
         spot_attrs = {}
         for key in self._results.keys():
-            path = "{}spots_{}_{}.nc".format(output_dir_name, key[0], key[1])
+            path = "{}spots_{}_{}.nc".format(base_name, key[0], key[1])
             spot_attrs["{}_{}".format(key[0], key[1])] = path
             self._results[key].spot_attrs.save(path)
         json_data["spot_attrs"] = spot_attrs
 
         save = json.dumps(json_data)
-        with open("{}SpotFindingResults.json".format(output_dir_name), "w") as f:
+        with open("{}SpotFindingResults.json".format(base_name), "w") as f:
             f.write(save)
 
     @classmethod
     def load(cls, json_file: str):
         """Load serialized spot finding results.
-        
+
         Parameters:
         -----------
         json_file: str
@@ -162,6 +165,7 @@ class SpotFindingResults:
         """
         fl = open(json_file)
         data = json.load(fl)
+        os.chdir(os.path.dirname(json_file))
 
         with open(data["log"]["path"]) as f:
             txt = json.load(f)
@@ -182,12 +186,12 @@ class SpotFindingResults:
             one = int(key.split("_")[1])
             index = {AXES_ORDER[0]: zero, AXES_ORDER[1]: one}
             spots = SpotAttributes.load(path)
-            spot_attributes_list.append((PerImageSliceSpotResults(spots, extras=None),index))
+            spot_attributes_list.append((PerImageSliceSpotResults(spots, extras=None), index))
 
         return SpotFindingResults(
-             imagestack_coords = coords,
-             log = log,
-             spot_attributes_list = spot_attributes_list
+            imagestack_coords=coords,
+            log=log,
+            spot_attributes_list=spot_attributes_list
         )
 
     @property
