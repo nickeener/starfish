@@ -1,8 +1,9 @@
+import typing
 import warnings
 from collections import Counter, defaultdict
 from copy import deepcopy
-from itertools import chain, islice, permutations, product
 from functools import partial
+from itertools import chain, islice, permutations, product
 
 import numpy as np
 import pandas as pd
@@ -197,6 +198,7 @@ def buildBarcodes(roundData: pd.DataFrame,
     def barcodeBuildFunc(data: pd.DataFrame,
                          channelDict: dict,
                          rang: tuple,
+                         currentRound: int,
                          roundOmitNum: int,
                          roundNum: int) -> tuple:
         '''
@@ -247,7 +249,7 @@ def buildBarcodes(roundData: pd.DataFrame,
             # Creates all possible spot code combinations from neighbors
             codes = list(product(*neighborLists))
             # Only save the ones with the correct number of dropped rounds
-            counters = [Counter(code) for code in codes]
+            counters = [Counter(code) for code in codes]  # type: typing.List[Counter]
             spotCodes = [code for j, code in enumerate(codes) if counters[j][0] == roundOmitNum]
             # Only save those that don't have a dropped round in the current round
             spotCodes = [code for code in spotCodes if code[currentRound] != 0]
@@ -291,7 +293,7 @@ def buildBarcodes(roundData: pd.DataFrame,
 
     # Run in parallel
     results = [barcodeBuildFunc.remote(dataID, channelDictID, (ranges[i], ranges[i + 1]),
-                                       roundOmitNum, roundNum)
+                                       currentRound, roundOmitNum, roundNum)
                for i in range(len(ranges[:-1]))]
     rayResults = ray.get(results)
 
@@ -418,17 +420,18 @@ def decoder(roundData: pd.DataFrame,
     # Create dictionary where the keys are the different round sets that can be used for decoding
     # and the values are the modified codebooks corresponding to the rounds used
     permCodeDict = {}
+    targets = codebook['target'].data
     for currentRounds in roundPermutations:
-        codes = codebook.argmax(Axes.CH.value)
+        codes = codebook.data.argmax(axis=2)
         if roundOmitNum > 0:
             omittedRounds = np.argwhere(~np.asarray(currentRounds))
             # Makes entire column that is being omitted -1, which become 0 after 1 is added
             # so they match up with the barcodes made earlier
-            codes.data[:, omittedRounds] = -1
+            codes[:, omittedRounds] = -1
         # Makes codes 1-based which prevents collisions when hashing
-        codes.data += 1
+        codes += 1
         # Barcodes are hashed as before
-        roundDict = dict(zip([hash(tuple(code)) for code in codes.data], codes['target'].data))
+        roundDict = dict(zip([hash(tuple(code)) for code in codes], targets))
         permCodeDict.update(roundDict)
 
     # Put data table and permutations codes dictionary in ray storage
@@ -587,7 +590,7 @@ def distanceFilter(roundData: pd.DataFrame,
 def cleanup(bestPerSpotTables: dict,
             spotCoords: dict,
             channelDict: dict,
-            roundOmitNum: int) -> pd.DataFrame:
+            numJobs: int) -> pd.DataFrame:
     '''
     Function that combines all "best" codes for each spot in each round into a single table,
     filters them by their frequency (with a user-defined threshold), chooses between overlapping
@@ -630,15 +633,89 @@ def cleanup(bestPerSpotTables: dict,
         mergedCodes = mergedCodes.append(bestPerSpotTables[r])
     mergedCodes = mergedCodes.reset_index(drop=True)
 
-    # Only use codes that were found as best for each of its spots
+    # Only pass spot combinations that were found as best for at least 2 of the spots that make it
+    # up (reduces false postives)
     spotCodes = mergedCodes['best_spot_codes']
     counts = defaultdict(int)  # type: dict
     for code in spotCodes:
         counts[code] += 1
-    passing = list(set(code for code in counts if counts[code] == len(spotCoords) - roundOmitNum))
-    finalCodes = mergedCodes[mergedCodes['best_spot_codes'].isin(passing)].reset_index(drop=True)
-    finalCodes = finalCodes.iloc[finalCodes['best_spot_codes'].drop_duplicates().index]
-    finalCodes = finalCodes.reset_index(drop=True)
+    passing = list(set(code for code in counts if counts[code] > 1))
+    passingCodes = mergedCodes[mergedCodes['best_spot_codes'].isin(passing)].reset_index(drop=True)
+    passingCodes = passingCodes.iloc[passingCodes['best_spot_codes'].drop_duplicates().index]
+    passingCodes = passingCodes.reset_index(drop=True)
+
+    # Need to find maximum independent set of spot codes where each spot code is a node and there
+    # is an edge connecting two codes if they share at least one spot. Does this by eliminating
+    # nodes (spot codes) that have the most edges first and if there is tie for which has the most
+    # edges they are ordered in order of decreasing spatial variance of the spots that make it up
+    # (so codes are eliminated in order first of how many other codes they share a spots with and
+    # then spatial variance is used to break ties). Nodes are eliminated from the graph in this way
+    # until there are no more edges in the graph
+
+    # First prepare list of counters of the spot IDs for each round
+    spotCodes = passingCodes['best_spot_codes']
+    codeArray = np.asarray([np.asarray(code) for code in spotCodes])
+    counters = []  # type: typing.List[Counter]
+    for r in range(5):
+        counters.append(Counter(codeArray[:, r]))
+        counters[-1][0] = 0
+
+    # Then create collisonCounter dictionary which has the number of edges for each code and the
+    # collisions dictionary which holds a list of codes each code has an overlap with. Any code with
+    # no overlaps is added to keep to save later
+    collisionCounter = defaultdict(int)  # type: dict
+    collisions = defaultdict(list)
+    keep = []
+    for i, spotCode in enumerate(spotCodes):
+        collision = False
+        for r in range(5):
+            if spotCode[r] != 0:
+                count = counters[r][spotCode[r]] - 1
+                if count > 0:
+                    collision = True
+                    collisionCounter[spotCode] += count
+                    collisions[spotCode].extend([spotCodes[ind[0]] for ind in
+                                                 np.argwhere(codeArray[:, r] == spotCode[r])
+                                                 if ind[0] != i])
+        if not collision:
+            keep.append(i)
+
+    # spotDict dictionary has mapping for codes to their index location in spotCodes and
+    # codeDistance has mapping for codes to their spatial variance value
+    spotDict = {code: i for i, code in enumerate(spotCodes)}
+    codeDistance = passingCodes.set_index('best_spot_codes')['best_distances'].to_dict()
+    # maxValue is only calculated from collisionCounter once
+    maxValue = max(collisionCounter.values())
+    while len(collisions):
+        # Gets all the codes that have the highest value for number of edges, and then sorts them by
+        # their spatial variance values in decreasing order
+        maxValue = max(collisionCounter.values())
+        maxCodes = [code for code in collisionCounter if collisionCounter[code] == maxValue]
+        distances = np.asarray([codeDistance[code] for code in maxCodes])
+        sortOrder = [item[1] for item in sorted(zip(distances, range(len(distances))),
+                                                reverse=True)]
+        maxCodes = [tuple(code) for code in np.asarray(maxCodes)[sortOrder]]
+
+        # For every maxCode, first check that it is still a maxCode (may change during this loop),
+        # if it is then modify all the nodes that have edge to it to have one less edge (if this
+        # causes that node to have no more edges then delete it from the graph and add it to the
+        # codes we keep), then delete the maxCode from the graph
+        for maxCode in maxCodes:
+            if collisionCounter[maxCode] == maxValue:
+                for code in collisions[maxCode]:
+                    if collisionCounter[code] == 1:
+                        del collisionCounter[code]
+                        del collisions[code]
+                        keep.append(spotDict[code])
+                    else:
+                        collisionCounter[code] -= 1
+                        collisions[code] = [c for c in collisions[code] if c != maxCode]
+
+                del collisionCounter[maxCode]
+                del collisions[maxCode]
+
+    # Only choose codes that we found to not have any edges in the graph
+    finalCodes = passingCodes.loc[keep].reset_index(drop=True)
 
     # Add barcode lables, spot coordinates, barcode center coordinates, and number of rounds used
     # for each barcode to table
@@ -649,7 +726,8 @@ def cleanup(bestPerSpotTables: dict,
     for i in range(len(finalCodes)):
         spotCode = finalCodes.iloc[i]['best_spot_codes']
         barcodes.append([channelDict[j][spot] for j, spot in enumerate(spotCode)])
-        roundsUsed.append(roundNum - Counter(spotCode)[0])
+        counter = Counter(spotCode)  # type: Counter
+        roundsUsed.append(roundNum - counter[0])
         coords = np.asarray([spotCoords[j][spot] for j, spot in enumerate(spotCode) if spot != 0])
         allCoords.append(coords)
         coords = np.asarray([coord for coord in coords])
