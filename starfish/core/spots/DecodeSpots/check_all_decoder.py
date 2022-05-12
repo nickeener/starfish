@@ -5,7 +5,6 @@ from typing import Any, Hashable, Mapping, Tuple
 
 import numpy as np
 import pandas as pd
-import ray
 
 from starfish.core.codebook.codebook import Codebook
 from starfish.core.intensity_table.decoded_intensity_table import DecodedIntensityTable
@@ -21,40 +20,79 @@ from .util import _merge_spots_by_round
 
 class CheckAll(DecodeSpotsAlgorithm):
     """
-    Decode spots by generating all possible combinations of spots to form barcodes given a radius
-    distance that spots must be from each other in order to form a barcode. Then chooses the best
-    set of nonoverlapping spot combinations by choosing the ones with the least spatial variance
-    of their spot coordinates and are also found to be best for multiple spots in the barcode
-    (see algorithm below). Allows for error correction rounds.
+    Decode spots by generating all possible combinations of neighboring spots to form barcodes
+    given a radius distance that spots may be from each other in order to form a barcode. Then
+    chooses the best set of nonoverlapping spot combinations by choosing the ones with the least
+    spatial variance of their spot coordinates, highest normalized intensity and are also found
+    to be best for multiple spots in the barcode (see algorithm below). Allows for one error
+    correction round (option for more may be added in the future).
 
-    (see input parmeters below)
+    Two slightly different algorithms are used to balance the precision (proportion of targets that
+    represent true mRNA molecules) and recall (proportion of true mRNA molecules that are
+    recovered). They share mostly the same steps but two are switched between the different
+    versions. The following is for the "filter-first" version:
+
     1. For each spot in each round, find all neighbors in other rounds that are within the search
     radius
     2. For each spot in each round, build all possible full length barcodes based on the channel
     labels of the spot's neighbors and itself
-    3. Drop barcodes that don't have a matching target in the codebook
-    4. Choose the "best" barcode of each spot's possible target matching barcodes by calculating
-    the sum of variances for each of the spatial coordinates of the spots that make up each barcode
-    and choosing the minimum distance barcode (if there is a tie, they are all dropped as
-    ambiguous). Each spot is assigned a "best" barcode in this way.
-    5. Only keep barcodes/targets that were found as "best" using at least 2 of the spots that make
-    each up
+    3. Choose the "best" barcode of each spot's possible barcodes by calculating a score that is
+    based on minimizing the spatial variance and maximizing the intensities of the spots in the
+    barcode. Each spot is assigned a "best" barcode in this way.
+    4. Drop "best" barcodes that don't have a matching target in the codebook
+    5. Only keep barcodes/targets that were found as "best" using at least x of the spots that make
+    each up (x is determined by parameters)
     6. Find maximum independent set (approximation) of the spot combinations so no two barcodes use
     the same spot
-    7. Remove all spots used in decoded targets that passed the previous filtering steps from the
-    original set of spots
-    8. Rerun steps 2-5 for barcodes that use less than the full set of rounds for codebook
-    matching (how many rounds can be dropped determined by error_rounds parameter)
+
+    The other method (which I'll call "decode-first") is the same except steps 3 and 4 are switched
+    so that the minimum scoring barcode is chosen from the set of possible codes that have a match
+    to the codebook. The filter-first method will return fewer decoded targets (lower recall) but
+    has a lower false positive rate (higher precision) while the other method will find more targets
+    (higher recall) but at the cost of an increased false positive rate (lower precision).
+
+    Decoding is run in multiple stages with the parameters becoming less strict as it gets into
+    later stages. The high accuracy algorithm (filter-first) is always run first followed by the low
+    accuracy method (decode-first), each with slightly different parameters based on the choice of
+    "mode" parameter. After each decoding, the spots found to be in decoded barcodes are removed
+    from the original set of spots before they are decoded again with a new set of parameters. In
+    order to simplify the number of parameters to choose from, I have sorted them into three sets of
+    presets ("high", "medium", or "low" accuracy) determined by the "mode" parameter.
+
+    Decoding is also done multiple times at multiple search radius values that start at 0 and
+    increase incrementally until they reach the user-specified search radius. This allows high
+    confidence barcodes to be called first and make things easier when later codes are called.
+
+    If error_rounds is set to 1 (currently cannot handle more than 1), after running all decodings
+    for barocdes that exactly match the codebook, another set of decodings will be run to find
+    barcodes that are missing a spot in exactly one round. If the codes in the codebook all have a
+    hamming distance of at least 2 from all other codes, each can still be uniquely indentified
+    using a partial code with a single round dropped. Barcodes decoded with a partial code like this
+    are inherently less accurate and so an extra dimension called "rounds_used" was added to the
+    DecodedIntensityTable output that labels each decoded target with the number of rounds that was
+    used to decode it, allowing you to easily separate these less accurate codes from your high
+    accuracy set if you wish
+
 
     Parameters
     ----------
     codebook : Codebook
         Contains codes to decode IntensityTable
     search_radius : float
-        Number of pixels over which to search for spots in other rounds and channels.
+        Maximum allowed distance (in pixels) that spots in different rounds can be from each other
+        and still be allowed to be combined into a barcode together
     error_rounds : int
         Maximum hamming distance a barcode can be from it's target in the codebook and still be
         uniquely identified (i.e. number of error correction rounds in each the experiment)
+    mode : string
+        One of three preset parmaters sets. Choices are: "low", "med", or 'high'. Low accuracy mode
+        will return more decoded targets but at the cost to accuracy (high recall, low precision)
+        while the high accuracy version will find fewer false postives but also fewer targets
+        overall (high precision, low recall), medium is a balance between the two.
+    physical_coords : bool
+        True or False, should decoding using physical distances from the original imagestack that
+        you performed spot finding on? Should be used when distances between z pixels is much
+        greater than distance between x and y pixels.
     """
 
     def __init__(
@@ -88,7 +126,7 @@ class CheckAll(DecodeSpotsAlgorithm):
             *args) -> DecodedIntensityTable:
         """
         Decode spots by finding the set of nonoverlapping barcodes that have the minimum spatial
-        variance within each barcode
+        variance within each barcode.
 
         Parameters
         ----------
@@ -101,7 +139,7 @@ class CheckAll(DecodeSpotsAlgorithm):
         Returns
         -------
         DecodedIntensityTable :
-            IntensityTable decoded and appended with Features.TARGET and Features.QUALITY values.
+            IntensityTable decoded and appended with Features.TARGET values.
 
         """
 
@@ -111,9 +149,6 @@ class CheckAll(DecodeSpotsAlgorithm):
         # Check that numJobs is a positive integer
         if numJobs < 0 or not isinstance(numJobs, int):
             sys.exit('n_process must be a positive integer')
-
-        # Initialize ray for multi_processing
-        ray.init(num_cpus=numJobs, ignore_reinit_error=True)
 
         # Create dictionary where keys are round labels and the values are pandas dataframes
         # containing information on the spots found in that round
@@ -125,6 +160,7 @@ class CheckAll(DecodeSpotsAlgorithm):
         if counter[0] > self.errorRounds:
             exit('Not enough spots to form a barcode')
 
+        # If using physical coordinates, extract z and xy scales and check that they are all > 0
         if self.physicalCoords:
             physicalCoords = spots.physical_coord_ranges
             if len(physicalCoords['z'].data) > 1:
@@ -152,7 +188,8 @@ class CheckAll(DecodeSpotsAlgorithm):
         # increase in neighborhood size
         set1 = False
         zs = set()
-        [zs.update(spotTables[r]['z']) for r in range(len(spotTables))]
+        for r in range(len(spotTables)):
+            zs.update(spotTables[r]['z'])
         if self.physicalCoords:
             if zScale < self.searchRadius or len(zs) > 1:
                 set1 = True
@@ -169,7 +206,8 @@ class CheckAll(DecodeSpotsAlgorithm):
         maxRadii = allSearchRadii[(allSearchRadii - self.searchRadius) <= 0][-1]
         radiusSet = allSearchRadii[allSearchRadii <= maxRadii]
 
-        # Calculate neighbors for each radius in the set
+        # Calculate neighbors for each radius in the set (done only once and referred back to
+        # throughout decodings)
         neighborsByRadius = {}
         for searchRadius in radiusSet:
             if self.physicalCoords:
@@ -190,7 +228,9 @@ class CheckAll(DecodeSpotsAlgorithm):
         # Set list of round omission numbers to loop through
         roundOmits = range(self.errorRounds + 1)
 
-        # Set parameters according to presets
+        # Set parameters according to presets (determined empirically). Strictness value determines
+        # the decoding method used and the allowed number of possible barcode choices (positive
+        # for filter-first, negative for decode-first).
         if self.mode == 'high':
             strictnesses = [50, -1]
             seedNumbers = [len(spotTables) - 1, len(spotTables)]
@@ -215,17 +255,21 @@ class CheckAll(DecodeSpotsAlgorithm):
         else:
             exit('Invalid mode choice ("high", "med", or "low")')
 
-        # Decode for each round omission number, store results in allCodes table
+        # Decode for each round omission number, intensity cutoff, and then search radius
         allCodes = pd.DataFrame()
-        for s, strictness in enumerate(strictnesses):
-            seedNumber = seedNumbers[s]
-            for currentRoundOmitNum in roundOmits:
+        for currentRoundOmitNum in roundOmits:
+            for s, strictness in enumerate(strictnesses):
+
+                # Set seedNumber according to parameters for this strictness value
+                seedNumber = seedNumbers[s]
+
+                # First decodes only the highest normalized intensity spots then adds in the rest
                 for intVal in range(50, -1, -50):
 
+                    # First check that there are enough spots left otherwise an error will occur
                     spotsPerRound = [len(spotTables[r]) for r in range(len(spotTables))]
                     counter = Counter(spotsPerRound)
                     condition3 = True if counter[0] > currentRoundOmitNum else False
-
                     if not condition3:
                         # Subset spots by intensity, start with top 50% then decode again with all
                         currentTables = {}
@@ -236,6 +280,8 @@ class CheckAll(DecodeSpotsAlgorithm):
 
                     # Decode each radius and remove spots found in each decoding before the next
                     for sr, searchRadius in enumerate(radiusSet):
+
+                        # Scale radius by xy scale if needed
                         if self.physicalCoords:
                             searchRadius = round(searchRadius * xScale, 5)
 
@@ -262,8 +308,9 @@ class CheckAll(DecodeSpotsAlgorithm):
                                 # roundData will carry the possible barcode info for each spot in
                                 # the current round being examined
                                 roundData = deepcopy(currentTables[r])
-                                roundData = roundData.drop(['intensity', 'z', 'y', 'x', 'radius',
-                                                            'c', 'spot_quals'], axis=1)
+
+                                # Drop all but the spot_id column
+                                roundData = roundData[['spot_id']]
 
                                 # From each spot's neighbors, create all possible combinations that
                                 # would form a barocde with the correct number of rounds. Adds
@@ -272,19 +319,17 @@ class CheckAll(DecodeSpotsAlgorithm):
                                                           currentRoundOmitNum, channelDict,
                                                           strictness, r, numJobs)
 
-                                # When strictness is positive, distanceFilter is run first on all
-                                # the potential barcodes to choose the one with the minimum score
-                                # (based on spatial variance of the spots and their intensities)
-                                # which are then matched to the codebook. Spots that have more
-                                # possible barcodes to choose between than the current strictness
-                                # number are dropped as ambiguous. If strictness is negative, all
+                                # When strictness is positive the filter-first methods is used and
+                                # distanceFilter is run first on all the potential barcodes to
+                                # choose the one with the minimum score (based on spatial variance
+                                # of the spots and their intensities) which are then matched to the
+                                # codebook. Spots that have more possible barcodes to choose between
+                                # than the current strictnessnumber are dropped as ambiguous. If
+                                # strictness is negative, the decode-first method is run where all
                                 # the possible barcodes are instead first matched to the codebook
                                 # and then the lowest scoring decodable spot combination is chosen
                                 # for each spot. Spots that have more decodable barcodes to choose
                                 # from than the strictness value (absolute value) are dropped.
-                                # Positive strictness method has lower false positive rate but
-                                # finds fewer targets while the negative strictness method has
-                                # higher false positive rates but finds more targets
                                 if strictness > 0:
 
                                     # Choose most likely combination of spots for each seed spot
@@ -315,7 +360,7 @@ class CheckAll(DecodeSpotsAlgorithm):
                                 decodedTables[r] = roundData
 
                             # Turn spot table dictionary into single table, filter barcodes by
-                            # round frequency, add additional information, and choose between
+                            # the seed number, add additional information, and choose between
                             # barcodes that have overlapping spots
                             finalCodes = cleanup(decodedTables, spotCoords, channelDict,
                                                  strictness, currentRoundOmitNum, seedNumber)
@@ -330,9 +375,6 @@ class CheckAll(DecodeSpotsAlgorithm):
 
                             # Append found codes to allCodes table
                             allCodes = allCodes.append(finalCodes).reset_index(drop=True)
-
-        # Shutdown ray
-        ray.shutdown()
 
         # Create and fill in intensity table
         channels = spots.ch_labels
@@ -366,14 +408,13 @@ class CheckAll(DecodeSpotsAlgorithm):
         int_table.values = np.asarray(table_codes)
         int_table = transfer_physical_coords_to_intensity_table(intensity_table=int_table,
                                                                 spots=spots)
-        intensities = int_table.transpose('features', 'r', 'c')
 
         # Validate results are correct shape
-        self.codebook._validate_decode_intensity_input_matches_codebook_shape(intensities)
+        self.codebook._validate_decode_intensity_input_matches_codebook_shape(int_table)
 
         # Create DecodedIntensityTable
         result = DecodedIntensityTable.from_intensity_table(
-            intensities,
+            int_table,
             targets=(Features.AXIS, allCodes['targets'].astype('U')),
             distances=(Features.AXIS, allCodes["distance"]),
             passes_threshold=(Features.AXIS, np.full(len(allCodes), True)),
