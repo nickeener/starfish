@@ -619,7 +619,7 @@ def decoder(roundData: pd.DataFrame,
 
     # Update table
     try:
-        roundData['targets'] = list(chain(*[job[0] for job in ressults]))
+        roundData['targets'] = list(chain(*[job[0] for job in results]))
         roundData['spot_codes'] = list(chain(*[job[1] for job in results]))
     except:
         print('\n')
