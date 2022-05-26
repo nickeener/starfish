@@ -618,8 +618,22 @@ def decoder(roundData: pd.DataFrame,
         results = [x for x in poolMap]
 
     # Update table
-    roundData['targets'] = list(chain(*[job[0] for job in results]))
-    roundData['spot_codes'] = list(chain(*[job[1] for job in results]))
+    try:
+        roundData['targets'] = list(chain(*[job[0] for job in results]))
+        roundData['spot_codes'] = list(chain(*[job[1] for job in results]))
+    except:
+        print('\n')
+        print('currentRoundOmitNum', currentRoundOmitNum)
+        print('currentRound', currentRound)
+        print('\n')
+        print('roundData', roundData)
+        print('\n')
+        print('chunkedData', chunkedData)
+        print('\n')
+        print('results', results)
+        print('\n')
+        exit('I have failed :(')
+
 
     roundData = roundData[[len(targets) > 0 for targets in
                            roundData['targets']]].reset_index(drop=True)
