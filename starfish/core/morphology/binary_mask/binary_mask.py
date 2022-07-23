@@ -82,7 +82,7 @@ class BinaryMaskCollection:
         for ix, mask_data in enumerate(masks):
             if mask_data.binary_mask.ndim not in (2, 3):
                 raise TypeError(f"expected 2 or 3 dimensions; got {mask_data.binary_mask.ndim}")
-            if mask_data.binary_mask.dtype != bool:
+            if mask_data.binary_mask.dtype != np.bool:
                 raise ValueError(f"expected dtype of bool; got {mask_data.binary_mask.dtype}")
 
             self._masks[ix] = mask_data
@@ -162,7 +162,7 @@ class BinaryMaskCollection:
                 len(self._pixel_ticks[axis])
                 for axis, _ in zip(*_get_axes_names(len(self._pixel_ticks)))
             ),
-            dtype=bool,
+            dtype=np.bool,
         )
         fill_from_mask(
             mask_data.binary_mask,
@@ -307,8 +307,8 @@ class BinaryMaskCollection:
         for label, roi in enumerate(roi_set.values()):
             polygon = np.array([roi[Axes.Y.value], roi[Axes.X.value]]).T
 
-            y_min, x_min = np.floor(np.amin(polygon, axis=0)).astype(int)
-            y_max, x_max = np.floor(np.amax(polygon, axis=0)).astype(int)
+            y_min, x_min = np.floor(np.amin(polygon, axis=0)).astype(np.int)
+            y_max, x_max = np.floor(np.amax(polygon, axis=0)).astype(np.int)
 
             vertex_row_coords, vertex_col_coords = polygon.T
             vertex_col_coords -= vertex_col_coords.min()
@@ -355,13 +355,19 @@ class BinaryMaskCollection:
         # Load the label image generated from another program
         label_image = io.imread(path_to_labeled_image)
 
+        if len(label_image.shape) == 3 and label_image.shape[0] > label_image.shape[-1]:
+            label_image = np.transpose(label_image, [2, 0, 1])
+
         # Get the physical ticks from the original dapi image
         physical_ticks = {Coordinates.Y: original_image.xarray.yc.values,
-                          Coordinates.X: original_image.xarray.xc.values}
-
+                          Coordinates.X: original_image.xarray.xc.values,
+                          Coordinates.Z: original_image.xarray.zc.values}
+        import pdb
+        #pdb.set_trace()
         # Get the pixel values from the original dapi image
         pixel_coords = {Axes.Y: original_image.xarray.y.values,
-                        Axes.X: original_image.xarray.x.values}
+                        Axes.X: original_image.xarray.x.values,
+                        Axes.ZPLANE: original_image.xarray.z.values}
 
         # Create the label image
         label_im = LabelImage.from_label_array_and_ticks(
@@ -420,7 +426,7 @@ class BinaryMaskCollection:
         if len(array_shapes) > 1:
             raise ValueError("all masks must be identically sized")
         for array_dtype in array_dtypes:
-            if array_dtype != bool:
+            if array_dtype != np.bool:
                 raise TypeError("arrays must be binary data")
 
         # normalize the pixel coordinates to Mapping[Axes, ArrayLike[int]]
@@ -720,14 +726,14 @@ class BinaryMaskCollection:
             >>> from starfish.core.morphology.binary_mask.test import factories
             >>> binary_mask_collection = factories.binary_mask_collection_2d()
             >>> anded_mask_collection = binary_mask_collection._reduce(
-                np.logical_and, np.ones(shape=(5, 6), dtype=bool))
+                np.logical_and, np.ones(shape=(5, 6), dtype=np.bool))
 
         Applying a logical 'AND' across all the masks, without hard-coding the size of the array.
             >>> import numpy as np
             >>> from starfish.core.morphology.binary_mask.test import factories
             >>> binary_mask_collection = factories.binary_mask_collection_2d()
             >>> anded_mask_collection = binary_mask_collection._reduce(
-                np.logical_and, lambda shape: np.ones(shape=shape, dtype=bool))
+                np.logical_and, lambda shape: np.ones(shape=shape, dtype=np.bool))
         """
         if callable(initial):
             shape = tuple(len(self._pixel_ticks[axis])
