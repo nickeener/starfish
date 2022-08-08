@@ -37,7 +37,6 @@ class SpotFindingResults:
     ):
         """
         Construct a SpotFindingResults instance
-
         Parameters
         -----------
         imagestack_coords : xr.CoordinateArray
@@ -65,7 +64,6 @@ class SpotFindingResults:
     def __setitem__(self, indices: Mapping[Axes, int], value: PerImageSliceSpotResults):
         """
         Add the round, ch indices and corresponding SpotAttributes to the results dict.
-
         Parameters
         ----------
         indices: Mapping[Axes, int]
@@ -79,12 +77,10 @@ class SpotFindingResults:
     def __getitem__(self, indices: Mapping[Axes, int]) -> PerImageSliceSpotResults:
         """
         Returns the spots found in a given round and ch.
-
         Parameters
         ----------
         indices: Mapping[Axes, int]
             Mapping of Axes to int values
-
         Returns
         --------
         SpotAttributes
@@ -112,12 +108,10 @@ class SpotFindingResults:
 
     def save(self, output_dir_name: str) -> None:
         """Save spot finding results to series of files.
-
         Parameters
         ----------
         output_dir_name: str
             Location to save all files.
-
         """
         json_data: Dict[str, Any] = {}
 
@@ -154,7 +148,6 @@ class SpotFindingResults:
     @classmethod
     def load(cls, json_file: str):
         """Load serialized spot finding results.
-
         Parameters:
         -----------
         json_file: str
@@ -164,7 +157,6 @@ class SpotFindingResults:
         --------
         SpotFindingResults:
             Object containing loaded results
-
         """
         fl = open(json_file)
         data = json.load(fl)
@@ -239,11 +231,9 @@ class SpotFindingResults:
         """
         Returns a list of pipeline components that have been applied to this get these SpotResults
         as well as their corresponding runtime parameters.
-
         For more information about provenance logging see
         `Provenance Logging
         <https://spacetx-starfish.readthedocs.io/en/latest/help_and_reference/api/utils/ilogging.html>`_
-
         Returns
         -------
         Log
