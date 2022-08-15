@@ -193,7 +193,7 @@ class SpotFindingResults:
                     # but if we got this error by other means it stands
                     raise err
                 else:
-                    spots = pd.DataFrame(columns=[Axes.X.value, Axes.Y.value, Axes.ZPLANE.value, Features.SPOT_RADIUS])
+                    spots = pd.DataFrame(columns=[Axes.X.value, Axes.Y.value, Axes.ZPLANE.value, Features.SPOT_RADIUS, Features.SPOT_ID])
                     spots = SpotAttributes(spots)
             spot_attributes_list.append((PerImageSliceSpotResults(spots, extras=None), index))
 
