@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, Hashable, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import xarray as xr
+import pandas as pd
 
-from starfish.core.types import Axes, Coordinates, SpotAttributes
+from starfish.core.types import Axes, Features, Coordinates, SpotAttributes
 from starfish.core.util.logging import Log
 
 AXES_ORDER = (Axes.ROUND, Axes.CH)
@@ -183,7 +184,17 @@ class SpotFindingResults:
             zero = int(key.split("_")[0])
             one = int(key.split("_")[1])
             index = {AXES_ORDER[0]: zero, AXES_ORDER[1]: one}
-            spots = SpotAttributes.load(path)
+            try:
+                spots = SpotAttributes.load(path)
+            except ValueError as err:
+                contents = open(path).read()
+                if contents != '[]':
+                    # a completely empty file is valid
+                    # but if we got this error by other means it stands
+                    raise err
+                else:
+                    spots = pd.DataFrame(columns=[Axes.X.value, Axes.Y.value, Axes.ZPLANE.value, Features.SPOT_RADIUS])
+                    spots = SpotAttributes(spots)
             spot_attributes_list.append((PerImageSliceSpotResults(spots, extras=None), index))
 
         os.chdir(pwd)
