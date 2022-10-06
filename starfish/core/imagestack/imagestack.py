@@ -153,10 +153,8 @@ class ImageStack:
             first_tile.coordinates[Coordinates.X], dims=Axes.X.value)
         imagestack._data[Coordinates.Y.value] = xr.DataArray(
             first_tile.coordinates[Coordinates.Y], dims=Axes.Y.value)
-        # Fill with nan for now, then replace with calculated midpoints
         imagestack._data[Coordinates.Z.value] = xr.DataArray(
-            np.full(imagestack._data.sizes[Axes.ZPLANE.value], np.nan),
-            dims=Axes.ZPLANE.value)
+            first_tile.coordinates[Coordinates.Z], dims=Axes.ZPLANE.value)
 
         for selector in all_selectors:
             tile = tile_data.get_tile(
@@ -167,12 +165,10 @@ class ImageStack:
                         first_tile.coordinates[Coordinates.X], tile.coordinates[Coordinates.X])
                     and np.array_equal(
                         first_tile.coordinates[Coordinates.Y], tile.coordinates[Coordinates.Y])
+                    and np.array_equal(
+                        first_tile.coordinates[Coordinates.Z], tile.coordinates[Coordinates.Z])
             ):
                 raise ValueError("Tiles must be aligned")
-            if Coordinates.Z in tile.coordinates:
-                assert len(tile.coordinates[Coordinates.Z]) == 1
-                imagestack._data[Coordinates.Z.value].loc[selector[Axes.ZPLANE]] = \
-                    tile.coordinates[Coordinates.Z][0]
 
         return imagestack
 
