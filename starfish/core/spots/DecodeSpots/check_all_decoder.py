@@ -398,8 +398,8 @@ class CheckAll(DecodeSpotsAlgorithm):
         rounds = spots.round_labels
 
         # create empty IntensityTable filled with np.nan
-        data = np.full((len(allCodes), len(channels), len(rounds)), fill_value=np.nan)
-        dims = (Features.AXIS, Axes.CH.value, Axes.ROUND.value)
+        data = np.full((len(allCodes), len(rounds), len(channels)), fill_value=np.nan)
+        dims = (Features.AXIS, Axes.ROUND.value, Axes.CH.value)
 
         if len(allCodes) == 0:
             centers = []
@@ -428,7 +428,7 @@ class CheckAll(DecodeSpotsAlgorithm):
                 for j, ch in enumerate(allCodes.loc[i, 'best_barcodes']):
                     # If a round is not used, row will be all zeros
                     code.append(np.asarray([0 if k != ch - 1 else 1 for k in range(len(channels))]))
-                table_codes.append(np.asarray(code).T)
+                table_codes.append(np.asarray(code))
             int_table.values = np.asarray(table_codes)
             int_table = transfer_physical_coords_to_intensity_table(intensity_table=int_table,
                                                                     spots=spots)
