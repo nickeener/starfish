@@ -172,6 +172,10 @@ class CheckAll(DecodeSpotsAlgorithm):
             if xScale <= 0 or yScale <= 0 or zScale <= 0:
                 raise ValueError(
                     'invalid physical coords')
+        else:
+            zScale = 1
+            yScale = 1
+            xScale = 1
 
         # Add one to channels labels (prevents collisions between hashes of barcodes later), adds
         # unique spot_id column for each spot in each round, and scales the x, y, and z columns to
@@ -219,7 +223,7 @@ class CheckAll(DecodeSpotsAlgorithm):
         # normalized intensities. Each is a dict w/ keys equal to the round labels and each
         # value is a dict with spot IDs in that round as keys and their corresponding value
         # (channel label, spatial coords, etc)
-        channelDict, spotCoords, spotIntensities, spotQualDict = createRefDicts(spotTables, numJobs)
+        channelDict, spotCoords, spotIntensities, spotQualDict = createRefDicts(spotTables, xScale, numJobs)
 
         # Add spot quality (normalized spot intensity) tp spotTables
         for r in range(len(spotTables)):
@@ -235,21 +239,21 @@ class CheckAll(DecodeSpotsAlgorithm):
         if self.mode == 'high':
             strictnesses = [50, -1]
             seedNumbers = [len(spotTables) - 1, len(spotTables)]
-            minDist = 3
+            minDist = 3 * xScale
             if self.errorRounds == 1:
                 strictnesses.append(1)
                 seedNumbers.append(len(spotTables) - 1)
         elif self.mode == 'med':
             strictnesses = [50, -5]
             seedNumbers = [len(spotTables) - 1, len(spotTables)]
-            minDist = 3
+            minDist = 3 * xScale
             if self.errorRounds == 1:
                 strictnesses.append(5)
                 seedNumbers.append(len(spotTables) - 1)
         elif self.mode == 'low':
             strictnesses = [50, -100]
             seedNumbers = [len(spotTables) - 1, len(spotTables) - 1]
-            minDist = 100
+            minDist = 100 * xScale
             if self.errorRounds == 1:
                 strictnesses.append(10)
                 seedNumbers.append(len(spotTables) - 1)
@@ -404,7 +408,7 @@ class CheckAll(DecodeSpotsAlgorithm):
         if len(allCodes) == 0:
             centers = []
         else:
-            centers = allCodes['center']
+            centers = [(c[0] / zScale, c[1] / yScale, c[2] / xScale) for c in allCodes['center']]
 
         coords: Mapping[Hashable, Tuple[str, Any]] = {
             Features.SPOT_RADIUS: (Features.AXIS, np.full(len(allCodes), 1)),
