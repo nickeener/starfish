@@ -94,7 +94,9 @@ def createNeighborDict(spotTables: dict,
                     pass
     return neighborDict
 
-def createRefDicts(spotTables: dict, numJobs: int) -> tuple:
+def createRefDicts(spotTables: dict,
+                   scale: float,
+                   numJobs: int) -> tuple:
 
     '''
     Create dictionaries with mapping from spot id (row index + 1) in spotTables to channel label,
@@ -104,6 +106,8 @@ def createRefDicts(spotTables: dict, numJobs: int) -> tuple:
         spotTables : dict
             Dictionary with round labels as keys and pandas dataframes containing spot information
             for its key round as values (result of _merge_spots_by_round function)
+        scale : float
+            xy physical distance scale value (has value 1 when physical_coords = False)
         numJobs : int
             Number of CPU threads to use in parallel
     Returns
@@ -131,7 +135,7 @@ def createRefDicts(spotTables: dict, numJobs: int) -> tuple:
         spotIntensities[r][0] = 0
 
     # Create normalized intensity dictionary
-    spotQualDict = spotQuality(spotTables, spotIntensities, numJobs)
+    spotQualDict = spotQuality(spotTables, spotCoords, spotIntensities, channelDict, scale, numJobs)
 
     return channelDict, spotCoords, spotIntensities, spotQualDict
 
@@ -182,8 +186,75 @@ def decodeSpots(compressed: list, roundNum: int) -> list:
                     for j in range(len(idxs))]
     return decompressed
 
+def spotQualityFunc(spots: list,
+                    spotCoords: dict,
+                    spotIntensities: dict,
+                    spotTables: dict,
+                    channelDict: dict,
+                    r: int,
+                    scale: float) -> list:
+
+    '''
+    Helper function for spotQuality to run in parallel
+    Parameters
+    ----------
+        spots : list
+            List of spot IDs in the current round to calculate the normalized intensity of
+        spotCoords : dict
+            Spot ID to spatial coordinate dictionary
+        spotIntensities : dict
+            Spot ID to raw intensity dictionary
+        spotTables : dict
+            Dictionary containing spot info tables
+        channelDict : dict
+            Spot ID to channel label dictionary
+        r : int
+            Current round
+        scale : float
+            xy physical distance scale value (has value 1 when physical_coords = False)
+    Returns
+    -------
+        list : list of normalized spot intensities of the input spot IDs
+    '''
+
+    # Find spots in the same neighborhood (same channel and z slice and less than 100 pixels away
+    # in either x or y direction)
+    neighborhood = 100 * scale
+    ySpotMax = np.max(spotTables[r]['y'])
+    xSpotMax = np.max(spotTables[r]['x'])
+    quals = []
+    for i, spot in enumerate(spots):
+        z, y, x = spotCoords[r][spot]
+        ch = channelDict[r][spot]
+        yMin = y - neighborhood if y - neighborhood >= 0 else 0
+        yMax = y + neighborhood if y + neighborhood <= ySpotMax + 1 else ySpotMax + 1
+        xMin = x - neighborhood if x - neighborhood >= 0 else 0
+        xMax = x + neighborhood if x + neighborhood <= xSpotMax + 1 else xSpotMax + 1
+        neighborInts = spotTables[r][(spotTables[r]['c'] == ch)
+                                     & (spotTables[r]['z'] == z)
+                                     & (spotTables[r]['y'] >= yMin)
+                                     & (spotTables[r]['y'] < yMax)
+                                     & (spotTables[r]['x'] >= xMin)
+                                     & (spotTables[r]['x'] < xMax)]['intensity']
+        # If no neighbors drop requirement that they be within 100 pixels of each other
+        if len(neighborInts) == 1:
+            neighborInts = spotTables[r][(spotTables[r]['c'] == ch)
+                                         & (spotTables[r]['z'] == z)]['intensity']
+        # If still no neighbors drop requirement that they be on the same z slice
+        if len(neighborInts) == 1:
+            neighborInts = spotTables[r][(spotTables[r]['c'] == ch)]['intensity']
+        # Calculate the l2 norm of the neighbor's intensities and divide the spot's intensity by
+        # this value to get it's normalized intensity value
+        norm = np.linalg.norm(neighborInts)
+        quals.append(spotIntensities[r][spot] / norm)
+
+    return quals
+
 def spotQuality(spotTables: dict,
+                spotCoords: dict,
                 spotIntensities: dict,
+                channelDict: dict,
+                scale: float,
                 numJobs: int) -> dict:
 
     '''
@@ -194,8 +265,14 @@ def spotQuality(spotTables: dict,
     ----------
         spotTables : dict
             Dictionary containing spot info tables
+        spotCoords : dict
+            Spot ID to spatial coordinate dictionary
         spotIntensities : dict
             Spot ID to raw intensity dictionary
+        channelDict : dict
+            Spot ID to channel label dictionary
+        scale : float
+            xy physical distance scale value (has value 1 when physical_coords = False)
         numJobs : int
             Number of CPU threads to use in parallel
     Returns
@@ -204,33 +281,28 @@ def spotQuality(spotTables: dict,
     '''
 
     # Calculate normalize spot intensities for each spot in each round
-    spotQuals = defaultdict(dict)  # type: dict
-    neigborhood = 100
+    spotQuals = {}  # type: dict
     for r in range(len(spotTables)):
-        all_ch_all_z = spotTables[r][['z', 'y', 'x', 'spot_id', 'intensity']]
-        for ch in sorted(set(spotTables[r]['c'])):
-            one_ch_all_z = spotTables[r][spotTables[r]['c'] == ch][['z', 'y', 'x', 'spot_id',
-                                                                    'intensity']]
-            for z in sorted(set(spotTables[r]['z'])):
-                one_ch_one_z = spotTables[r][(spotTables[r]['c'] == ch)
-                                             & (spotTables[r]['z'] == z)][['z', 'y', 'x', 'spot_id',
-                                                                           'intensity']]
-                slice_ids = one_ch_one_z['spot_id'].to_list()
-                tree = cKDTree(one_ch_one_z[['z', 'y', 'x']])
-                res = tree.query_ball_point(one_ch_one_z[['z', 'y', 'x']], neigborhood,
-                                            workers=numJobs)
-                for i, spot_id in enumerate(one_ch_one_z['spot_id']):
-                    if len(res[i]) > 1:
-                        neighbor_ids = [slice_ids[x] for x in res[i]]
-                        intensities = [spotIntensities[r][neighbor_id] for neighbor_id in
-                                       neighbor_ids]
-                    elif len(one_ch_all_z) > 1:
-                        intensities = one_ch_all_z['intensity']
-                    else:
-                        intensities = all_ch_all_z['intensity']
+        roundSpots = spotTables[r]['spot_id']
+        spotQuals[r] = {}
 
-                    norm = np.linalg.norm(intensities)
-                    spotQuals[r][spot_id] = spotIntensities[r][spot_id] / norm
+        # Calculates index ranges to chunk data by
+        ranges = [0]
+        for i in range(1, numJobs):
+            ranges.append(round((len(roundSpots) / numJobs) * i))
+        ranges.append(len(roundSpots))
+        chunkedSpots = [roundSpots[ranges[i]:ranges[i + 1]] for i in range(len(ranges[:-1]))]
+
+        # Run in parallel
+        with ProcessPoolExecutor() as pool:
+            part = partial(spotQualityFunc, spotCoords=spotCoords, spotIntensities=spotIntensities,
+                           spotTables=spotTables, channelDict=channelDict, r=r, scale=scale)
+            poolMap = pool.map(part, [subSpots for subSpots in chunkedSpots])
+            results = [x for x in poolMap]
+
+        # Extract results
+        for spot, qual in zip(roundSpots, list(chain(*results))):
+            spotQuals[r][spot] = qual
 
     return spotQuals
 
@@ -300,8 +372,6 @@ def buildBarcodes(roundData: pd.DataFrame,
         roundOmitNum : int
             Maximum hamming distance a barcode can be from it's target in the codebook and still
             be uniquely identified (i.e. number of error correction rounds in each the experiment
-        channelDict : dict
-            Dictionary with mappings between spot IDs and their channel labels
         strictness: int
             Determines the number of possible codes a spot is allowed to have before it is dropped
             as ambiguous (if it is positive)
