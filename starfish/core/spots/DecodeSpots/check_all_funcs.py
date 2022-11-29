@@ -602,7 +602,8 @@ def decoder(roundData: pd.DataFrame,
     return roundData
 
 def distanceFunc(spotsAndTargets: list,
-                 currentRoundOmitNum: int) -> tuple:
+                 currentRoundOmitNum: int,
+                 scaleFactors: tuple) -> tuple:
 
     '''
     Subfunction for distanceFilter to allow it to run in parallel
@@ -613,6 +614,8 @@ def distanceFunc(spotsAndTargets: list,
             decoded already)
         currentRoundOmitNum : int
             Number of rounds that can be dropped from each barcode
+        scaleFactors : tuple
+            Physical distance scaling factors (z , y, x)
     Returns
     -------
         tuple: First object is the min scoring spot code for each spots, the second is the min
@@ -627,6 +630,7 @@ def distanceFunc(spotsAndTargets: list,
     bestSpotCodes = []
     bestDistances = []
     bestTargets = []
+    normedFactors = np.array(scaleFactors) / min(scaleFactors)
     for i, codes in enumerate(subSpotCodes):
         quals = [sum([globSpotQualDict[r][spot] for r, spot in enumerate(code)  # type: ignore
                       if spot != 0]) for code in codes]
@@ -635,7 +639,11 @@ def distanceFunc(spotsAndTargets: list,
                                for qual in quals])
         subCoords = [[globSpotCoords[r][spot] for r, spot in enumerate(code)  # type: ignore
                       if spot != 0] for code in codes]
-        spaVars = [sum(np.var(np.asarray(coords), axis=0)) for coords in subCoords]
+        scaledCoords = [[(c[0] / scaleFactors[0], c[1] / scaleFactors[1], c[2] / scaleFactors[2]) 
+                         for c in coord] for coord in subCoords]
+        rescaledCoords = [[(c[0] * normedFactors[0], c[1] * normedFactors[1], c[2] * normedFactors[2]) 
+                         for c in coord] for coord in scaledCoords]
+        spaVars = [sum(np.var(np.asarray(coords), axis=0)) for coords in rescaledCoords]
         newSpaVars = np.asarray([-np.log(1 / (1 + spaVar)) for spaVar in spaVars])
         combined = newQuals + (newSpaVars * constant)
         minInds = np.where(combined == min(combined))[0]
@@ -661,6 +669,7 @@ def distanceFilter(roundData: pd.DataFrame,
                    spotQualDict: dict,
                    currentRound: int,
                    currentRoundOmitNum: int,
+                   scaleFactors: tuple,
                    numJobs: int) -> pd.DataFrame:
 
     '''
@@ -691,6 +700,8 @@ def distanceFilter(roundData: pd.DataFrame,
             Number of rounds that can be dropped from each barcode
         numJobs : int
             Number of CPU threads to use in parallel
+        scaleFactors : tuple
+            Physical distance scaling factors (z , y, x)
     Returns
     -------
         pd.DataFrame : Modified spot table with added columns to with info on the "best" barcode
@@ -724,7 +735,8 @@ def distanceFilter(roundData: pd.DataFrame,
     # Run in parallel
     with ProcessPoolExecutor(max_workers=numJobs, initializer=setGlobalDistance,
                              initargs=(spotCoords, spotQualDict)) as pool:
-        part = partial(distanceFunc, currentRoundOmitNum=currentRoundOmitNum)
+        part = partial(distanceFunc, currentRoundOmitNum=currentRoundOmitNum,
+                       scaleFactors=scaleFactors)
         poolMap = pool.map(part, [spotsAndTargets for spotsAndTargets in zip(chunkedSpotCodes,
                                                                              chunkedTargets)])
         results = [x for x in poolMap]

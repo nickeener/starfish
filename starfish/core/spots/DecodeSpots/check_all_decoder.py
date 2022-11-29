@@ -176,6 +176,7 @@ class CheckAll(DecodeSpotsAlgorithm):
             zScale = 1
             yScale = 1
             xScale = 1
+        scaleFactors = (zScale, yScale, xScale)
 
         # Add one to channels labels (prevents collisions between hashes of barcodes later), adds
         # unique spot_id column for each spot in each round, and scales the x, y, and z columns to
@@ -239,21 +240,21 @@ class CheckAll(DecodeSpotsAlgorithm):
         if self.mode == 'high':
             strictnesses = [50, -1]
             seedNumbers = [len(spotTables) - 1, len(spotTables)]
-            minDist = 3 * xScale
+            minDist = 3
             if self.errorRounds == 1:
                 strictnesses.append(1)
                 seedNumbers.append(len(spotTables) - 1)
         elif self.mode == 'med':
             strictnesses = [50, -5]
             seedNumbers = [len(spotTables) - 1, len(spotTables)]
-            minDist = 3 * xScale
+            minDist = 3
             if self.errorRounds == 1:
                 strictnesses.append(5)
                 seedNumbers.append(len(spotTables) - 1)
         elif self.mode == 'low':
             strictnesses = [50, -100]
             seedNumbers = [len(spotTables) - 1, len(spotTables) - 1]
-            minDist = 100 * xScale
+            minDist = 100
             if self.errorRounds == 1:
                 strictnesses.append(10)
                 seedNumbers.append(len(spotTables) - 1)
@@ -351,7 +352,8 @@ class CheckAll(DecodeSpotsAlgorithm):
                                         # values. Adds distance column to roundData
                                         roundData = distanceFilter(roundData, spotCoords,
                                                                    spotQualDict, r,
-                                                                   currentRoundOmitNum, numJobs)
+                                                                   currentRoundOmitNum,
+                                                                   scaleFactors, numJobs)
 
                                         # Match possible barcodes to codebook. Adds target column
                                         # to roundData
@@ -372,7 +374,8 @@ class CheckAll(DecodeSpotsAlgorithm):
                                         # intensity values. Adds distance column to roundData
                                         roundData = distanceFilter(roundData, spotCoords,
                                                                    spotQualDict, r,
-                                                                   currentRoundOmitNum, numJobs)
+                                                                   currentRoundOmitNum,
+                                                                   scaleFactors, numJobs)
 
                                     # Assign to DecodedTables dictionary
                                     decodedTables[r] = roundData
