@@ -217,9 +217,17 @@ class BlobDetector(FindSpotsAlgorithm):
                     ch = spot_attributes_list[i][1][Axes.CH]
                     merged_z_tables[(r, ch)] = merged_z_tables[(r, ch)].append(
                         spot_attributes_list[i][0].spot_attrs.data)
+
                 new = []
                 r_chs = sorted([*merged_z_tables])
                 selectors = list(image_stack._iter_axes({Axes.ROUND, Axes.CH}))
+                sorted_selectors = []
+                for r_ch in r_chs:
+                    for selector in selectors:
+                        if selector['r'] == r_ch[0] and selector['c'] == r_ch[1]:
+                            sorted_selectors.append(selector)
+                            break
+                selectors = sorted_selectors
                 for i, (r, ch) in enumerate(r_chs):
                     merged_z_tables[(r, ch)]['spot_id'] = range(len(merged_z_tables[(r, ch)]))
                     spot_attrs = SpotAttributes(merged_z_tables[(r, ch)].reset_index(drop=True))
