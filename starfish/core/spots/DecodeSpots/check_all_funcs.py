@@ -898,13 +898,13 @@ def cleanup(bestPerSpotTables: dict,
     barcodes = []
     allCoords = []
     centers = []
-    roundsUsed = []
+    correctedRounds = []
     # intensities = []
     for i in range(len(finalCodes)):
         spotCode = finalCodes.iloc[i]['spot_codes']
         barcodes.append([channelDict[j][spot] for j, spot in enumerate(spotCode)])
         counter = Counter(spotCode)  # type: Counter
-        roundsUsed.append(roundNum - counter[0])
+        correctedRounds.append(counter[0])
         coords = np.asarray([spotCoords[j][spot] for j, spot in enumerate(spotCode) if spot != 0])
         allCoords.append(coords)
         coords = np.asarray([coord for coord in coords])
@@ -915,7 +915,7 @@ def cleanup(bestPerSpotTables: dict,
     finalCodes['coords'] = allCoords
     finalCodes['center'] = centers
     # finalCodes['intensities'] = intensities
-    finalCodes['rounds_used'] = roundsUsed
+    finalCodes['corrected_rounds'] = correctedRounds
 
     return finalCodes
 

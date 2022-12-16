@@ -65,7 +65,7 @@ class DecodedIntensityTable(IntensityTable):
             targets: Tuple[str, np.ndarray],
             distances: Optional[Tuple[str, np.ndarray]] = None,
             passes_threshold: Optional[Tuple[str, np.ndarray]] = None,
-            rounds_used: Optional[Tuple[str, np.ndarray]] = None):
+            corrected_rounds: Optional[Tuple[str, np.ndarray]] = None):
 
         """
         Assign target values to intensities.
@@ -81,9 +81,9 @@ class DecodedIntensityTable(IntensityTable):
         passes_threshold : Optional[Tuple[str, np.ndarray]]
             Corresponding array of boolean values indicating if each itensity passed
             given thresholds.
-        rounds_used: Optional[Tuple[str, np.ndarray]]
+        corrected_rounds: Optional[Tuple[str, np.ndarray]]
             Corresponding array of integers indicated the number of rounds this
-            decoded intensity was found in
+            decoded intensity had corrected
 
         Returns
         -------
@@ -96,8 +96,8 @@ class DecodedIntensityTable(IntensityTable):
             intensities[Features.DISTANCE] = distances
         if passes_threshold:
             intensities[Features.PASSES_THRESHOLDS] = passes_threshold
-        if rounds_used:
-            intensities['rounds_used'] = rounds_used
+        if corrected_rounds:
+            intensities['corrected_rounds'] = corrected_rounds
         return intensities
 
     def to_decoded_dataframe(self) -> DecodedSpots:
