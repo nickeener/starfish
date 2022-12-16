@@ -67,10 +67,11 @@ class CheckAll(DecodeSpotsAlgorithm):
     barcodes that are missing a spot in exactly one round. If the codes in the codebook all have a
     hamming distance of at least 2 from all other codes, each can still be uniquely identified
     using a partial code with a single round dropped. Barcodes decoded with a partial code like this
-    are inherently less accurate and so an extra dimension called "rounds_used" was added to the
-    DecodedIntensityTable output that labels each decoded target with the number of rounds that was
-    used to decode it, allowing you to easily separate these less accurate codes from your high
-    accuracy set if you wish
+    are inherently less accurate and so an extra dimension called "corrected_rounds" was added to the
+    DecodedIntensityTable output that labels each decoded target with the number of rounds that were
+    corrected using the built-in error correction scheme to decode it, allowing you to easily separate
+    these less accurate codes from your high accuracy set if you wish. Barcodes that are not corrected
+    have a value of 0 in the "corrected_rounds" field.
 
 
     Parameters
@@ -449,13 +450,13 @@ class CheckAll(DecodeSpotsAlgorithm):
                 targets=(Features.AXIS, allCodes['targets'].astype('U')),
                 distances=(Features.AXIS, allCodes["distance"]),
                 passes_threshold=(Features.AXIS, np.full(len(allCodes), True)),
-                rounds_used=(Features.AXIS, allCodes['rounds_used']))
+                corrected_rounds=(Features.AXIS, allCodes['corrected_rounds']))
         else:
             result = DecodedIntensityTable.from_intensity_table(
                 int_table,
                 targets=(Features.AXIS, np.array([])),
                 distances=(Features.AXIS, np.array([])),
                 passes_threshold=(Features.AXIS, np.array([])),
-                rounds_used=(Features.AXIS, np.array([])))
+                corrected_rounds=(Features.AXIS, np.array([])))
 
         return result
