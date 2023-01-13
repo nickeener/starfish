@@ -114,6 +114,10 @@ class CheckAll(DecodeSpotsAlgorithm):
         if not isinstance(self.codebook, Codebook) or len(codebook) == 0:
             raise ValueError(
                 'codebook is either not a Codebook object or is empty')
+        # Check that codebook is one hot
+        for code in self.codebook:
+            if 0 in np.sum(code.data > 0, axis=1):
+                 raise ValueError('Codebook must be one-hot for CheckAll decoder')
         # Check that error_rounds is either 0 or 1
         if self.errorRounds not in [0, 1]:
             raise ValueError(
