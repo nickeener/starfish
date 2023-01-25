@@ -85,7 +85,10 @@ class BinaryMaskCollection:
             if mask_data.binary_mask.dtype != np.bool:
                 raise ValueError(f"expected dtype of bool; got {mask_data.binary_mask.dtype}")
 
-            self._masks[mask_data.region_properties.label] = mask_data
+            if mask_data.region_properties:
+                self._masks[mask_data.region_properties.label] = mask_data
+            else:
+                self._masks[ix] = mask_data
 
         if len(self._pixel_ticks) != len(self._physical_ticks):
             raise ValueError(
