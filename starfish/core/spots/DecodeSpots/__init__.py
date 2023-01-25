@@ -2,6 +2,7 @@ from ._base import DecodeSpotsAlgorithm
 from .check_all_decoder import CheckAll
 from .metric_decoder import MetricDistance
 from .per_round_max_channel_decoder import PerRoundMaxChannel
+from .postcode import postcodeDecode
 from .simple_lookup_decoder import SimpleLookupDecoder
 
 # autodoc's automodule directive only captures the modules explicitly listed in __all__.
