@@ -25,6 +25,7 @@ fonttools==4.33.3
 h5py==3.7.0
 idna==3.3
 imageio==2.19.3
+importlib-resources==5.10.2
 ipykernel==6.15.0
 ipython==8.4.0
 ipython-genutils==0.2.0
@@ -51,6 +52,11 @@ nest-asyncio==1.5.5
 networkx==2.8.4
 notebook==6.4.12
 numpy==1.22.4
+nvidia-cublas-cu11==11.10.3.66
+nvidia-cuda-nvrtc-cu11==11.7.99
+nvidia-cuda-runtime-cu11==11.7.99
+nvidia-cudnn-cu11==8.5.0.96
+opt-einsum==3.3.0
 packaging==21.3
 pandas==1.4.2
 pandocfilters==1.5.0
@@ -66,6 +72,8 @@ pure-eval==0.2.2
 pycparser==2.21
 Pygments==2.12.0
 pyparsing==3.0.9
+pyro-api==0.1.2
+pyro-ppl==1.8.4
 pyrsistent==0.18.1
 python-dateutil==2.8.2
 pytz==2022.1
@@ -93,13 +101,17 @@ terminado==0.15.0
 threadpoolctl==3.1.0
 tifffile==2022.5.4
 tinycss2==1.1.1
+torch==1.13.1
 tornado==6.1
 tqdm==4.64.0
 trackpy==0.5.0
 traitlets==5.3.0
+typing_extensions==4.4.0
 urllib3==1.26.9
 validators==0.20.0
 wcwidth==0.2.5
 webencodings==0.5.1
+wheel==0.38.4
 widgetsnbextension==3.6.1
 xarray==2022.3.0
+zipp==3.11.0
