@@ -62,7 +62,7 @@ class AreaFilter(FilterAlgorithm):
             binary_mask_collection: BinaryMaskCollection,
             *args, **kwargs) -> BinaryMaskCollection:
         matching_mask_data: MutableSequence[MaskData] = list()
-        for ix in range(len(binary_mask_collection)):
+        for ix in range(1, len(binary_mask_collection) + 1):
             props = binary_mask_collection.mask_regionprops(ix)
             if self._min_area is not None and props.area < self._min_area:
                 continue
