@@ -743,7 +743,7 @@ class BinaryMaskCollection:
             result = initial(shape)
         else:
             result = initial
-        for ix in range(len(self)):
+        for ix in self._masks:
             result = function(result, self.uncropped_mask(ix).values, *args, **kwargs)
 
         return BinaryMaskCollection.from_binary_arrays_and_ticks(
