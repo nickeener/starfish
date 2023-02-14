@@ -594,7 +594,7 @@ class BinaryMaskCollection:
             fill_from_mask(
                 mask_data.binary_mask,
                 mask_data.offsets,
-                ix + 1,
+                ix,
                 label_image_array,
             )
 
