@@ -95,6 +95,12 @@ class postcodeDecode(DecodeSpotsAlgorithm):
                     int_vector[r, ch] = spot_items[(r, ch)]['_'.join([str(zs[i]), str(xs[i]), str(ys[i])])]
             result_ints.append(int_vector)
         int_table.values = np.array(result_ints)
+        
+        # Reswap x and y values
+        tmp = deepcopy(int_table['y'].data)
+        int_table['y'].data = deepcopy(int_table['x'].data)
+        int_table['x'].data = tmp
+        
         int_table = transfer_physical_coords_to_intensity_table(intensity_table=int_table,
                                                                 spots=spots)
 
