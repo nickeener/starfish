@@ -407,31 +407,40 @@ class CombineAdjacentFeatures:
             intensities,
         )
 
-        # Create SpotAttributes and determine feature filtering outcomes
-        spot_attributes, passes_filter = self._create_spot_attributes(
-            props,
-            decoded_image,
-            target_map,
-            n_processes=n_processes
-        )
+        # If no transcripts found, create empty DecodedIntensityTable, otherwise, create from data
+        if len(props) == 0:
+            intensity_table = DecodedIntensityTable.from_intensity_table(mean_pixel_traces,
+                                                                         targets=(Features.AXIS,
+                                                                                  np.array([])),
+                                                                         passes_threshold=(Features.AXIS,
+                                                                                           np.array([])))
+        else:
 
-        # augment the SpotAttributes with filtering results and distances from nearest codes
-        spot_attributes.data[Features.DISTANCE] = mean_pixel_traces[Features.DISTANCE]
-        spot_attributes.data[Features.PASSES_THRESHOLDS] = passes_filter
+            # Create SpotAttributes and determine feature filtering outcomes
+            spot_attributes, passes_filter = self._create_spot_attributes(
+                props,
+                decoded_image,
+                target_map,
+                n_processes=n_processes
+            )
 
-        # create new indexes for the output IntensityTable
-        channel_index = mean_pixel_traces.indexes[Axes.CH]
-        round_index = mean_pixel_traces.indexes[Axes.ROUND]
-        coords = IntensityTable._build_xarray_coords(
-            spot_attributes=spot_attributes,
-            round_values=round_index,
-            channel_values=channel_index)
+            # augment the SpotAttributes with filtering results and distances from nearest codes
+            spot_attributes.data[Features.DISTANCE] = mean_pixel_traces[Features.DISTANCE]
+            spot_attributes.data[Features.PASSES_THRESHOLDS] = passes_filter
 
-        # create the output IntensityTable
-        dims = (Features.AXIS, Axes.ROUND.value, Axes.CH.value)
-        intensity_table = DecodedIntensityTable(
-            data=mean_pixel_traces, coords=coords, dims=dims
-        )
+            # create new indexes for the output IntensityTable
+            channel_index = mean_pixel_traces.indexes[Axes.CH]
+            round_index = mean_pixel_traces.indexes[Axes.ROUND]
+            coords = IntensityTable._build_xarray_coords(
+                spot_attributes=spot_attributes,
+                round_values=round_index,
+                channel_values=channel_index)
+
+            # create the output IntensityTable
+            dims = (Features.AXIS, Axes.ROUND.value, Axes.CH.value)
+            intensity_table = DecodedIntensityTable(
+                data=mean_pixel_traces, coords=coords, dims=dims
+            )
 
         # combine the various non-IntensityTable results into a NamedTuple before returning
         ccdr = ConnectedComponentDecodingResult(props, label_image, decoded_image)
