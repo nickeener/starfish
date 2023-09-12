@@ -1,6 +1,6 @@
 # Copied from:
 # https://github.com/gerstung-lab/postcode/blob/master/source-code/postcode/decoding_functions.py
-# Modified to match starfish format expectations
+# Modified to match starfish format expectations and to work with blank barcodes in codebook
 
 import itertools
 
@@ -174,7 +174,7 @@ def decoding_function(spots, barcodes_01,
         codes = torch.cat((codes, torch_format(estimate_additional_barcodes)))
     else:
         inf_ind = np.empty((0,), dtype=np.int32)
-
+    
     # normalize spot values
     ind_keep = np.where(np.sum(data.cpu().numpy() < np.percentile(data.cpu().numpy(),
                                                                   up_prc_to_remove, axis=0),
@@ -250,11 +250,12 @@ def decoding_function(spots, barcodes_01,
                                   print_training_progress)
 
     # collapsing added barcodes
+    
     class_probs_star_s = \
-        torch.cat((torch.cat((class_probs_star[:, 0:K],
-                  class_probs_star[:, bkg_ind].reshape((N, 1))), dim=1),
-                  torch.sum(class_probs_star[:, inf_ind], dim=1).reshape((N, 1))), dim=1)
+        torch.cat((torch.cat((class_probs_star[:, 0:K], class_probs_star[:, bkg_ind+1:]), dim=1),
+                  class_probs_star[:, bkg_ind].reshape((N, 1))), dim=1)
     inf_ind_s = inf_ind[0]
+    
     # adding another class if there are NaNs
     nan_spot_ind = torch.unique((torch.isnan(class_probs_star_s)).nonzero(as_tuple=False)[:, 0])
     if nan_spot_ind.shape[0] > 0:
@@ -268,8 +269,10 @@ def decoding_function(spots, barcodes_01,
 
     class_probs = class_probs_star_s.cpu().numpy()
 
-
-    class_ind = {'genes': np.arange(K), 'bkg': bkg_ind, 'inf': inf_ind_s, 'nan': nan_class_ind}
+    class_ind = {'genes': np.arange(inf_ind[-1]),
+                 'bkg': inf_ind[-1],
+                 'nan': nan_class_ind,
+                 'codes': torch.cat((codes[:-1], codes_inf))}
     torch_params = {'w_star': w_star_mod.cpu(), 'sigma_star': sigma_star.cpu(),
                     'sigma_ro_star': sigma_ro_star.cpu(), 'sigma_ch_star': sigma_ch_star.cpu(),
                     'theta_star': theta_star.cpu(),
@@ -287,9 +290,9 @@ def decoding_output_to_dataframe(out, df_class_names, df_class_codes):
     ind = out['class_probs'].argmax(axis=1)
     K = len(out['class_ind']['genes'])
     decoded = ind + 1
-    decoded[np.isin(ind, out['class_ind']['inf'])] = K + 1  # inf class
-    decoded[np.isin(ind, out['class_ind']['bkg'])] = K + 2  # bkg class
-    decoded[np.isin(ind, out['class_ind']['nan'])] = K + 3  # NaN class
+    #decoded[np.isin(ind, out['class_ind']['inf'])] = K + 1  # inf class
+    decoded[np.isin(ind, out['class_ind']['bkg'])] = K + 1  # bkg class
+    decoded[np.isin(ind, out['class_ind']['nan'])] = K + 2  # NaN class
     decoded_spots_df = pd.DataFrame(columns=['Name', 'Code', 'Probability'])
     decoded_spots_df['Name'] = df_class_names[decoded - 1]
     decoded_spots_df['Code'] = df_class_codes[decoded - 1]
