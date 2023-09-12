@@ -16,6 +16,10 @@ from starfish.types import Axes, Features
 from ._base import DecodeSpotsAlgorithm
 from .postcode_funcs import decoding_function, decoding_output_to_dataframe
 
+def torch_format(numpy_array):
+    D = numpy_array.shape[1] * numpy_array.shape[2]
+    return np.transpose(numpy_array, axes=[0,2,1]).reshape(numpy_array.shape[0], D)
+
 class postcodeDecode(DecodeSpotsAlgorithm):
 
     def __init__(self, codebook: Codebook):
@@ -30,15 +34,33 @@ class postcodeDecode(DecodeSpotsAlgorithm):
         spots_loc_s['X'] = np.array(bd_table.x)
         spots_loc_s['Y'] = np.array(bd_table.y)
         spots_loc_s['Z'] = np.array(bd_table.z)
-        barcodes_01 = np.swapaxes(np.array(self.codebook), 1, 2)
-        K = barcodes_01.shape[0]
+
+        real_codes = self.codebook[['blank' not  in target.lower() for target in self.codebook['target'].data]]
+        blank_codes = self.codebook[['blank' in target.lower() for target in self.codebook['target'].data]]
+        barcodes_01 = np.swapaxes(np.array(real_codes), 1, 2)
+        barcodes_02 = np.swapaxes(np.array(blank_codes), 1, 2)
+        K = barcodes_01.shape[0] + barcodes_02.shape[0]
 
         # Decode using postcode
         out = decoding_function(spots_s, barcodes_01, print_training_progress=True)
+        
+        # Subset for just the codes included in codebook (current values are for all possible codes)
+        keep = []
+        for codebook_code in torch_format(np.swapaxes(np.array(self.codebook), 1, 2)):
+            for i, possible_code in enumerate(out['class_ind']['codes']):
+                if list(np.array(possible_code)) == list(codebook_code):
+                    keep.append(i)
+                    break
+        shape = out['class_probs'].shape
+        out['class_probs'] = out['class_probs'][:, keep + [shape[1]-1]]
+        out['class_ind']['genes'] = np.array(range(len(self.codebook)))
+        out['class_ind']['bkg'] = self.codebook.shape[0]
+        out['class_ind']['inf'] = self.codebook.shape[0] + 1
+        
 
         # Reformat output into pandas dataframe
         df_class_names = np.concatenate((self.codebook.target.values,
-                                         ['infeasible', 'background', 'nan']))
+                                         ['background', 'nan']))
         barcodes_0123 = np.argmax(np.array(self.codebook), axis=2)
         channel_base = ['T', 'G', 'C', 'A']
         barcodes_AGCT = np.empty(K, dtype='object')
@@ -50,6 +72,7 @@ class postcodeDecode(DecodeSpotsAlgorithm):
 
         # Remove infeasible and background codes
         decoded_df_s = decoded_df_s[~np.isin(decoded_df_s['Name'], ['background', 'infeasible'])].reset_index(drop=True)
+        print(Counter(['blank' in target for target in decoded_df_s['Name']]))
 
         # create empty IntensityTable filled with np.nan
         channels = spots.ch_labels
@@ -68,8 +91,6 @@ class postcodeDecode(DecodeSpotsAlgorithm):
             Axes.CH.value: (Axes.CH.value, channels)
         }
         int_table = IntensityTable(data=data, dims=dims, coords=coords)
-
-        
 
         # Create dictionary of dictionaries where first dictionary's key is the (round, channel) tuple and the 
         # value is a dictionary with keys of spot coordinates as a string "z_y_x" with the intensity as the value
@@ -96,12 +117,12 @@ class postcodeDecode(DecodeSpotsAlgorithm):
                     int_vector[r, ch] = spot_items[(r, ch)]['_'.join([str(zs[i]), str(xs[i]), str(ys[i])])]
             result_ints.append(int_vector)
         int_table.values = np.array(result_ints)
-        
+
         # Reswap x and y values
         tmp = deepcopy(int_table['y'].data)
         int_table['y'].data = deepcopy(int_table['x'].data)
         int_table['x'].data = tmp
-        
+
         int_table = transfer_physical_coords_to_intensity_table(intensity_table=int_table,
                                                                 spots=spots)
 
