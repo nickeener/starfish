@@ -72,7 +72,6 @@ class postcodeDecode(DecodeSpotsAlgorithm):
 
         # Remove infeasible and background codes
         decoded_df_s = decoded_df_s[~np.isin(decoded_df_s['Name'], ['background', 'infeasible'])].reset_index(drop=True)
-        print(Counter(['blank' in target for target in decoded_df_s['Name']]))
 
         # create empty IntensityTable filled with np.nan
         channels = spots.ch_labels
