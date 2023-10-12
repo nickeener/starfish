@@ -142,7 +142,7 @@ def build_irregular_image(
             # the checksum of the original file.
             tile.provider = image
             fov_images.add_tile(tile)
-        collection.add_partition("fov_{:03}".format(expected_fov), fov_images)
+        collection.add_partition("fov_{:05}".format(expected_fov), fov_images)
     return collection
 
 
