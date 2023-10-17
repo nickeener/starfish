@@ -56,10 +56,19 @@ def measure_intensities_at_spot_locations_in_image(
         # numpy does exclusive max indexing, so need to subtract 1 from min to get centered box
         spots.data[f'{v}_min'] = np.clip(spots.data[v] - (radius - 1), 0, None)
         spots.data[f'{v}_max'] = np.clip(spots.data[v] + radius, None, max_size)
+    '''
     return spots.data[['z_min', 'z_max', 'y_min', 'y_max', 'x_min', 'x_max']].astype(int).apply(
         fn,
         axis=1
     )
+    '''
+    # Does the same as above but above converts values above int16 threshold to negatives and I can't figure out why
+    values = []
+    for row in spots.data[['z_min', 'z_max', 'y_min', 'y_max', 'x_min', 'x_max']].astype('int64').iterrows():
+        row = row[1]
+        d = image[row['z_min']:row['z_max'], row['y_min']:row['y_max'], row['x_min']:row['x_max']]
+        values.append(measurement_function(d))
+    return pd.Series(values, dtype='int64')
 
 
 def measure_intensities_at_spot_locations_across_imagestack(

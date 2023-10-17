@@ -81,7 +81,7 @@ class ClipPercentileToZero(FilterAlgorithm):
         v_min, v_max = np.percentile(image, [p_min, p_max])
         v_min = min_coeff * v_min
         v_max = max_coeff * v_max
-        return image.clip(min=v_min, max=v_max) - np.float32(v_min)
+        return (image.clip(min=v_min, max=v_max) - np.float32(v_min)).astype('uint16')
 
     def run(self, stack: ImageStack, in_place: bool = False,
             verbose: bool = False, n_processes: Optional[int] = None,

@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Callable, Optional, Tuple, Union
 
+import numpy as np
 import xarray as xr
 
 from starfish.core.image.Filter.gaussian_low_pass import GaussianLowPass
@@ -80,11 +81,12 @@ class GaussianHighPass(FilterAlgorithm):
         -------
         np.ndarray :
             filtered image of the same type and shape as the input image
-        """
-
+        """        
         blurred = GaussianLowPass._low_pass(image, sigma)
-        blurred = levels(blurred)  # clip negative values to 0.
-        filtered = image - blurred
+        #blurred = levels(blurred)  # clip negative values to 0.
+        filtered = image.astype('float32') - blurred
+        filtered.data[filtered.data < 0] = 0
+        filtered = np.rint(filtered).astype('uint16')
 
         return filtered
 
@@ -124,4 +126,5 @@ class GaussianHighPass(FilterAlgorithm):
             group_by=group_by, verbose=verbose, in_place=in_place, n_processes=n_processes,
             level_method=self.level_method
         )
+
         return result

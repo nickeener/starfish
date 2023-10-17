@@ -89,7 +89,7 @@ def levels(
     else:
         data = array
 
-    casted = data.astype(np.float32, copy=False)
+    casted = data.astype(np.uint16, copy=False)
     if casted is not data:
         preserve_input = False
     data = casted
@@ -98,18 +98,18 @@ def levels(
         # if we still want a copy, check to see if any modifications would be made.  if so, make a
         # copy.
         belowzero = np.any(data < 0)
-        aboveone = np.any(data > 1)
+        #aboveone = np.any(data > 1)
         # we could potentially skip the copy if it's just 'rescale' and the max is exactly 1.0, but
         # that is a pretty unlikely scenario, so we assume the max is not going to be exactly 1.0.
-        if belowzero or aboveone or rescale:
+        if belowzero or rescale:
             data = data.copy()
-            do_rescale = bool(rescale or (rescale_saturated and aboveone))
-            _adjust_image_levels_in_place(data, do_rescale)
+            do_rescale = bool(rescale or (rescale_saturated))
+            data = _adjust_image_levels_in_place(data, do_rescale)
     else:
         # we don't want a copy, so we just do it in place.
-        aboveone = np.any(data > 1)
-        do_rescale = bool(rescale or (rescale_saturated and aboveone))
-        _adjust_image_levels_in_place(data, do_rescale)
+        #aboveone = np.any(data > 1)
+        do_rescale = bool(rescale or (rescale_saturated))
+        data = _adjust_image_levels_in_place(data, do_rescale)
 
     if isinstance(array, xr.DataArray):
         if data is not array.values:
@@ -142,10 +142,11 @@ def _adjust_image_levels_in_place(
         Array whose values are in the interval [0, 1].
 
     """
-    assert array.dtype == np.float32
+    assert array.dtype == np.uint16
 
     array[array < 0] = 0
     if rescale:
-        array /= array.max()
-    else:
-        array[array > 1] = 1
+        array = array / array.max()
+        array = np.rint(array * 2**16).astype('uint16')
+
+    return array

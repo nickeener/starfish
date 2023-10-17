@@ -133,7 +133,7 @@ class ImageStack:
         data_dimensions.extend([Axes.Y.value, Axes.X.value])
 
         # now that we know the tile data type (kind and size), we can allocate the data array.
-        np_array = np.empty(shape=data_shape, dtype=np.float32)
+        np_array = np.empty(shape=data_shape, dtype=np.uint16)
         data = xr.DataArray(
             np_array,
             dims=data_dimensions,
@@ -205,9 +205,14 @@ class ImageStack:
             tile = self._tile_data.get_tile(
                 r=selector[Axes.ROUND], ch=selector[Axes.CH], z=selector[Axes.ZPLANE])
             data = tile.numpy_array
-            tile_dtype = data.dtype
+            
 
-            data = img_as_float32(data)
+            if np.max(data) <= 1:
+                data = np.rint(data * 2**16).astype('uint16')
+            if data.dtype != 'uint16':
+                data = data.astype('uint16')
+
+            tile_dtype = data.dtype
             with lock:
                 # setting data is not thread-safe.
                 self.set_slice(selector=selector, data=data, from_loader=True)
@@ -220,6 +225,7 @@ class ImageStack:
             with ThreadPoolExecutor() as tpe:
                 # gather all the data types of the tiles to ensure that they are compatible.
                 tile_dtypes = set(tpe.map(load_by_selector, all_selectors))
+
         else:
             tile_dtypes = set()
             group_by_selectors = list(self._iter_axes(self._tile_data.group_by))
@@ -230,7 +236,6 @@ class ImageStack:
                     tile_dtypes.add(load_by_selector(
                         {**group_by_selector, **non_group_by_selector}))
         pbar.close()
-
         tile_dtype_kinds = set(tile_dtype.kind for tile_dtype in tile_dtypes)
         tile_dtype_sizes = set(tile_dtype.itemsize for tile_dtype in tile_dtypes)
         if len(tile_dtype_kinds) != 1:
@@ -407,11 +412,14 @@ class ImageStack:
         """
         if len(array.shape) != 5:
             raise ValueError('a 5-d tensor with shape (n_round, n_ch, n_z, y, x) must be provided.')
+
+        '''
         try:
             cls._validate_data_dtype_and_range(array)
         except TypeError:
             warnings.warn(f"ImageStack detected as {array.dtype}. Converting to float32...")
             array = img_as_float32(array)
+        '''
 
         n_round, n_ch, n_z, height, width = array.shape
 
@@ -598,13 +606,14 @@ class ImageStack:
         _, axes = self._build_slice_list(selector)
         result = self.xarray.sel(formatted_indexers).values
 
+        '''
         if result.dtype != np.float32:
             warnings.warn(
                 f"Non-float32 dtype: {result.dtype} detected. Data has likely been set using "
                 f"private attributes of ImageStack. ImageStack only supports float data in the "
                 f"range [0, 1]. Many algorithms will not function properly if provided other "
                 f"DataTypes. See: http://scikit-image.org/docs/dev/user_guide/data_types.html")
-
+        '''
         return result, axes
 
     def set_slice(
@@ -691,7 +700,7 @@ class ImageStack:
         if not from_loader:
             self._ensure_data_loaded()
 
-        self._validate_data_dtype_and_range(data)
+        #self._validate_data_dtype_and_range(data)
 
         slice_list, expected_axes = self._build_slice_list(selector)
 
