@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Callable, Optional, Tuple, Union
 
+import numpy as np
 import xarray as xr
 from skimage.filters import gaussian
 
@@ -86,7 +87,7 @@ class GaussianLowPass(FilterAlgorithm):
             image,
             sigma=sigma, output=None, cval=0, multichannel=False, preserve_range=True, truncate=4.0
         )
-
+        filtered = np.rint(filtered).astype('uint16')
         return filtered
 
     def run(
