@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Typ
 import numpy as np
 import pandas as pd
 import xarray as xr
+from scipy.spatial import cKDTree
 from semantic_version import Version
-from sklearn.neighbors import NearestNeighbors
 from slicedimage.io import resolve_path_or_url
 
 from starfish.core.codebook._format import (
@@ -484,7 +484,10 @@ class Codebook(xr.DataArray):
 
     @staticmethod
     def _approximate_nearest_code(
-            norm_codes: "Codebook", norm_intensities: xr.DataArray, metric: str,
+            norm_codes: "Codebook",
+            norm_intensities: xr.DataArray,
+            pnorm: int = 2,
+            n_workers: int = 1,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """find the nearest code for each feature using the ball_tree approximate NN algorithm
 
@@ -514,8 +517,8 @@ class Codebook(xr.DataArray):
             traces=(Axes.CH.value, Axes.ROUND.value)).values
 
         # reshape into traces
-        nn = NearestNeighbors(n_neighbors=1, algorithm='ball_tree', metric=metric).fit(linear_codes)
-        metric_output, indices = nn.kneighbors(linear_features)
+        tree = cKDTree(linear_codes)
+        metric_output, indices = tree.query(linear_features, k=1, p=pnorm, workers=n_workers)
         gene_ids = np.ravel(norm_codes.indexes[Features.TARGET].values[indices])
 
         return np.ravel(metric_output), gene_ids
@@ -535,8 +538,13 @@ class Codebook(xr.DataArray):
             )
 
     def decode_metric(
-            self, intensities: IntensityTable, max_distance: Number, min_intensity: Number,
-            norm_order: int, metric: str = 'euclidean', return_original_intensities: bool = False
+            self, intensities: IntensityTable,
+            max_distance: Number,
+            min_intensity: Number,
+            norm_order: int,
+            pnorm: int = 2,
+            return_original_intensities: bool = False,
+            n_workers: int = 1,
     ) -> DecodedIntensityTable:
         """
         Assigns intensity patterns that have been extracted from an :py:class:`ImageStack` and
@@ -598,7 +606,7 @@ class Codebook(xr.DataArray):
         norm_codes, _ = self._normalize_features(self, norm_order=norm_order)
 
         metric_outputs, targets = self._approximate_nearest_code(
-            norm_codes, norm_intensities, metric=metric)
+            norm_codes, norm_intensities, pnorm, n_workers)
 
         # only targets with low distances and high intensities should be retained
         passes_filters = np.logical_and(
