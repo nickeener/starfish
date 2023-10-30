@@ -1,6 +1,5 @@
 from typing import Optional, Tuple
 
-
 from starfish.core.codebook.codebook import Codebook
 from starfish.core.imagestack.imagestack import ImageStack
 from starfish.core.intensity_table.decoded_intensity_table import DecodedIntensityTable
@@ -34,17 +33,24 @@ class PixelSpotDecoder(DetectPixelsAlgorithm):
         each intensities to its closest target (default = 2)
     """
     def __init__(
-            self, codebook: Codebook, metric: str, distance_threshold: float,
-            magnitude_threshold: int, min_area: int, max_area: int, norm_order: int = 2
+            self, codebook: Codebook,
+            distance_threshold: float,
+            magnitude_threshold: int,
+            min_area: int,
+            max_area: int,
+            norm_order: int = 2,
+            pnorm: int = 2,
+            n_workers: int = 1,
     ) -> None:
 
         self.codebook = codebook
-        self.metric = metric
+        self.pnorm = pnorm
         self.distance_threshold = distance_threshold
         self.magnitude_threshold = magnitude_threshold
         self.min_area = min_area
         self.max_area = max_area
         self.norm_order = norm_order
+        self.n_workers = n_workers
 
     def run(
             self,
@@ -76,7 +82,8 @@ class PixelSpotDecoder(DetectPixelsAlgorithm):
             max_distance=self.distance_threshold,
             min_intensity=self.magnitude_threshold,
             norm_order=self.norm_order,
-            metric=self.metric
+            pnorm=self.pnorm,
+            n_workers=self.n_workers
         )
         caf = CombineAdjacentFeatures(
             min_area=self.min_area,
