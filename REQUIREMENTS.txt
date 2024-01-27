@@ -5,7 +5,7 @@
 decorator < 5.0
 click
 dataclasses==0.6
-h5py
+h5py >= 3.7.0
 jsonschema
 matplotlib
 numpy != 1.13.0, >= 1.20.0
