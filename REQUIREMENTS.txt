@@ -23,7 +23,10 @@ scipy
 showit >= 1.1.4
 slicedimage==4.1.1
 sympy ~= 1.5.0
-torch
+
+# CUDA12 is not supported on ARM
+torch < 2.0.0
+
 tqdm
 trackpy
 validators
