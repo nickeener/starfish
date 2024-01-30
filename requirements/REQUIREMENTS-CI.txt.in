@@ -14,7 +14,7 @@ recommonmark
 requests
 types-pkg_resources
 types-PyYAML
-types-requests
+types-requests<2.31.0.7
 seaborn
 sphinx
 sphinx_autodoc_typehints
