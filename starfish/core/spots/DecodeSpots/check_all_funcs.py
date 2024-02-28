@@ -335,11 +335,11 @@ def barcodeBuildFunc(allNeighbors: list,
     # identifier
     allSpotCodes = []
     for neighbors in allNeighbors:
-        neighborLists = [neighbors[rnd] for rnd in range(roundNum)]
         # Adds a 0 to each round of the neighbors dictionary (allows barcodes with dropped
         # rounds to be created)
         if roundOmitNum > 0:
             [neighbors[rnd].append(0) for rnd in range(roundNum)]
+        neighborLists = [neighbors[rnd] for rnd in range(roundNum)]
         # Creates all possible spot code combinations from neighbors
         codes = list(product(*neighborLists))
         # Only save the ones with the correct number of dropped rounds
